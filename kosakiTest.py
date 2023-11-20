@@ -4,6 +4,12 @@ import numpy as np
 import chaospy
 from matplotlib import pyplot as plt
 import picos
+import cvxpy as cp
+from qpsolvers import solve_qp
+import ncpol2sdpa as ncp
+from sympy.physics.quantum.operator import Operator
+from sympy.physics.quantum.dagger import Dagger
+from math import log, e
 
 def rhoSigmaSample(n):
     """
@@ -16,40 +22,118 @@ def rhoSigmaSample(n):
     
     sigma = qtp.rand_dm(n)
     rho = qtp.rand_dm(n)
-
-    rho.data
-
-    d = qtp.entropy_relative(rho, sigma)
+    d = qtp.entropy_relative(rho, sigma, base=2)
+    l = findLam(rho, sigma)
 
     # Ensures that the density operators sampled have finite relative entropy
-    while d == np.inf:  
+    while d == np.inf or d < 0.001 or l > 2:  
         sigma = qtp.rand_dm(n)
         rho = qtp.rand_dm(n)
         d = qtp.entropy_relative(rho, sigma)
+        l = findLam(rho, sigma)
 
-    return rho, sigma, d
+    return rho, sigma, d, l
 
 def qObj2picos(r):
-    l = r.data.tolil().data
+    l = r.full()
     n = len(l)
     rho = picos.Constant([[l[i][j] for j in range(n)] for i in range(n)])
     return rho
 
-def sdpSolving(r, s, lam, t):
-    n = r.dims[0]
+def qObj2np(r):
+    l = r.data.tolil().data
+    n = len(l)
+    rho = [[l[i][j] for j in range(n)] for i in range(n)]
+    return rho
+
+
+def findLam(r, s):
     rho = qObj2picos(r)
     sigma = qObj2picos(s)
     sdp = picos.Problem()
-    Z = picos.ComplexVariable("Z", rho.shape)
-    print(picos.trace(rho))
-    sdp.set_objective("min", picos.trace(rho*(Z + Z.Htranspose() + (1-t)*Z.Htranspose()) + sigma*t*Z.Htranspose()).refined)
+    t = picos.RealVariable("t", 1)
+    sdp.add_constraint((1-t)*rho + t*sigma >> 0)
+    sdp.set_objective("max", t)
     sdp.solve()
-    print(Z.value)
+    return sdp.value
+
+def Ft(x,y,t):
+    return y*(x-y)/(t*(x-y)+y)
+
+def DFt(er, es, ti):
+    D = 0.0
+    for i in range(len(er[0])):
+        li = er[0][i]
+        Pi = er[1][i]*er[1][i].trans().conj()
+        for j in range(len(es[0])):
+            mj = es[0][j]
+            Qj = es[1][j]*es[1][j].trans().conj()
+            D += Ft(mj, li, ti) * (Pi*Qj).tr()
+    return D.real
+
+def relativeEntropyKosaki(r, s, l):
+    I = 0.0
+    eigenr = r.eigenstates()
+    eigens = s.eigenstates()
+    cm = -(1-l)/(len(T)**2 * log(2))
+    for i in range(len(T)-1):
+        wi = W[i]
+        ti = T[i]
+        I -= wi/log(2) * DFt(eigenr, eigens, ti)
+    return I+cm
+    
 
 
-r, s, d = rhoSigmaSample(3)
-sdpSolving(r, s, 0.0, 2.0)
+def quadrature(m):
+    """
+    Generates nodes and weights of a quadrature rule.
+
+        m   --  order of the quadrature rule (times two for some rules)
+    """
+    #t, w = chaospy.quadrature.fejer_2(m, (0,1))
+    #t, w = chaospy.quadrature.fejer_1(m, (0,1))
+    t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0,1), 1)
+    #t, w = chaospy.quadrature.gaussian(m, chaospy.Uniform(0,1))
+    #t, w = chaospy.quadrature.legendre_proxy(m, (0,1))
+    #t, w = chaospy.quadrature.legendre(m, 0, 1)
+    return t[0], w
 
 
+"""
+T, W = quadrature(10)
+D1 = 0
+D2 = 0
+
+r, s, D1 = rhoSigmaSample(2)
+lam = findLam(r,s)
+D2 = relativeEntropyKosaki(r, s, lam)
+
+print(D1, D2)
+"""
+
+N = 1000
+
+L = []
+
+for i in range(1, 11):
+    errRel = 0.0
+    T, W = quadrature(i)
+    for _ in range(N):
+        dim = np.random.randint(2,11)
+        r, s, D1, lam = rhoSigmaSample(dim)
+        D2 = relativeEntropyKosaki(r, s, lam)
+        errRel += abs(D2-D1)/D1*100
+        if abs(D2-D1)/D1*100 > 100:
+            print(D1, D2, abs(D2-D1)/D1*100, lam)
+    errRel /= N
+    print(len(T), errRel)
+    L += [[len(T), errRel]]
 
 
+L = np.array(L)
+np.savetxt("./data/kosaki/radau", L)
+
+"""
+plt.plot(L[:,0], L[:,1])
+plt.savefig("./data/kosaki/fejer_1.png")
+"""
