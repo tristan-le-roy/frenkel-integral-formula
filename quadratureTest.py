@@ -2,10 +2,26 @@ import numpy as np
 import qutip as qtp
 import chaospy
 from matplotlib import pyplot as plt
-from math import inf
+from math import inf, floor, ceil, log, log2
 import picos
 
-def rhoSigmaSample(n, epsDich=0.001):
+def relative_entropy(r, s):
+    res = r.eigenstates()
+    ses = s.eigenstates()
+
+    D = 0.0
+
+    for i in range(len(res[0])):
+        yi = res[0][i]
+        psii = res[1][i]
+        for j in range(len(ses[0])):
+            xj = ses[0][j]
+            phij = ses[1][j]
+            D += yi * log(yi/xj) * np.abs((psii.trans().conj()*phij).full()[0][0])**2
+    
+    return D
+
+def rhoSigmaSample(n):
     """
     Returns two density operators rho and sigma sampled at random,
     b such that (1+b)*sigma < b*rho and d = D(rho||sigma)
@@ -17,7 +33,6 @@ def rhoSigmaSample(n, epsDich=0.001):
     sigma = qtp.rand_dm(n)
     rho = qtp.rand_dm(n)
 
-    b = 0.0
     d = qtp.entropy_relative(rho, sigma)
 
     r = qObj2picos(rho)
@@ -31,11 +46,34 @@ def rhoSigmaSample(n, epsDich=0.001):
 
     return rho, sigma, lam, d
 
+def DI_sample():
+    rhoA = qtp.rand_dm(2)
+    rhoE = qtp.rand_dm(2)
+
+    rhoAE = qtp.tensor(rhoA, rhoE)
+    IrhoE = qtp.tensor(qtp.qeye(2)/2, rhoE)
+    
+    d = relative_entropy(rhoAE, IrhoE)
+    b = findB(rhoAE, IrhoE)
+
+    return rhoAE, IrhoE, b, d
+
+
 def qObj2picos(r):
     l = r.full()
     n = len(l)
     rho = picos.Constant([[l[i][j] for j in range(n)] for i in range(n)])
     return rho
+
+def findB(rho, sigma):
+    r = qObj2picos(rho)
+    s = qObj2picos(sigma)
+    FB = picos.Problem()
+    t = picos.RealVariable("t", 1)
+    FB.add_constraint((1-t)*r + t*s >> 0)
+    FB.set_objective("max", t)
+    FB.solve()
+    return FB.value - 1
 
 def quadrature(m):
     """
@@ -43,9 +81,9 @@ def quadrature(m):
 
         m   --  order of the quadrature rule (times two for some rules)
     """
-    t, w = chaospy.quadrature.fejer_2(m, (0,1))
+    #t, w = chaospy.quadrature.fejer_2(m, (0,1))
     #t, w = chaospy.quadrature.fejer_1(m, (0,1))
-    #t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0,1), 1)
+    t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0,1), 1)
     #t, w = chaospy.quadrature.gaussian(m, chaospy.Uniform(0,1))
     #t, w = chaospy.quadrature.legendre_proxy(m, (0,1))
     #t, w = chaospy.quadrature.legendre(m, 0, 1)
@@ -72,44 +110,60 @@ def testQuad(b, rho, sigma):
     """
 
     I = 0.0
+    
     for i in range(len(T)):
         wi = W[i]
         ti = T[i]
-        #The second part of the integral is shifted back to the interval [0;1]
-        I += wi*(1/ti * traceMinus(rho - ti*sigma) + 1/(ti+b) * traceMinus((ti/b + 1)*sigma - rho))
-    
+        I += wi/ti * traceMinus(rho - ti*sigma)
+
+    for i in range(len(Tp)):
+        wi   = Wp[i]
+        ti = Tp[i]
+        I += wi/(ti+b) * traceMinus((1+ti/b)*sigma - rho)
     return I
 
+B = 0.0
+Bmin = 10.0
+for i in range(10000):
+    _, _, b, _ = DI_sample()
+    B += b
+    if b < Bmin:
+        Bmin = b
+
+B /= 10000
+print(B, Bmin)
+
 """
-r, s, lam, D1 = rhoSigmaSample(4)
+rAE, rE, b, D1 = DI_sample()
 
-T,W = quadrature(6)
+T,W = quadrature(2)
+Tp,Wp = quadrature(10)
 
-D2 = testQuad(lam-1, r, s)
+D2 = testQuad(b, rAE, rE)
 
 print(D1, D2)
 
-"""
+
 N = 1000
 
 L = []
 
-for i in range(1, 20):
+for i in range(1, 11):
     errRel = 0.0
-    T, W = quadrature(i)
+    i1 = floor(i/3)
+    T, W = quadrature(i-i1)
+    Tp, Wp = quadrature(i1+1)
     for _ in range(N):
-        dim = np.random.randint(2,11)
-        r, s, lam, D1 = rhoSigmaSample(dim)
-        D2 = testQuad(lam-1, r, s)
+        #dim = np.random.randint(2,11)
+        #r, s, lam, D1 = rhoSigmaSample(dim)
+        r, s, b, D1 = DI_sample()
+        D2 = testQuad(b, r, s)
         errRel += abs(D2-D1)/D1*100
     errRel /= N
-    print(len(T), errRel)
-    L += [[len(T), errRel]]
+    print(len(T)+len(Tp), errRel)
+    L += [[len(T)+len(Tp), errRel]]
 
 L = np.array(L)
-np.savetxt("./data/quadrature_test/fejer_2", L)
+np.savetxt("./data/quadrature_test/radau_DI", L)
 
-"""
-plt.plot(L[:,0], L[:,1])
-plt.savefig("./data/quadrature_test/legendre.png")
 """

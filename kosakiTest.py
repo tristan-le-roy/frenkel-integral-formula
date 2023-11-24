@@ -9,7 +9,23 @@ from qpsolvers import solve_qp
 import ncpol2sdpa as ncp
 from sympy.physics.quantum.operator import Operator
 from sympy.physics.quantum.dagger import Dagger
-from math import log, e
+from math import log, e, log2
+
+def relative_entropy(r, s):
+    res = r.eigenstates()
+    ses = s.eigenstates()
+
+    D = 0.0
+
+    for i in range(len(res[0])):
+        yi = res[0][i]
+        psii = res[1][i]
+        for j in range(len(ses[0])):
+            xj = ses[0][j]
+            phij = ses[1][j]
+            D += yi * log2(yi/xj) * np.abs((psii.trans().conj() * phij).full()[0][0])**2
+    
+    return D
 
 def rhoSigmaSample(n):
     """
@@ -26,13 +42,32 @@ def rhoSigmaSample(n):
     l = findLam(rho, sigma)
 
     # Ensures that the density operators sampled have finite relative entropy
-    while d == np.inf or d < 0.001 or l > 2:  
+    while d == np.inf or d < 0.0001 or l > 2:  
         sigma = qtp.rand_dm(n)
         rho = qtp.rand_dm(n)
         d = qtp.entropy_relative(rho, sigma)
         l = findLam(rho, sigma)
 
     return rho, sigma, d, l
+
+def DI_sample():
+
+    rhoA = qtp.rand_dm(2)
+    rhoE = qtp.rand_dm(2)
+    rhoAE = qtp.tensor(rhoA, rhoE)
+    IrhoE = qtp.tensor(qtp.qeye(2)/2, rhoE)
+    d = relative_entropy(rhoAE, IrhoE)
+    l = findLam(rhoAE, IrhoE)
+
+    while d == np.inf or d < 0.0001 or l > 4:
+        rhoA = qtp.rand_dm(2)
+        rhoE = qtp.rand_dm(2)
+        rhoAE = qtp.tensor(rhoA, rhoE)
+        IrhoE = qtp.tensor(qtp.qeye(2)/2, rhoE)
+        d = relative_entropy(rhoAE, IrhoE)
+        l = findLam(rhoAE, IrhoE)
+
+    return rhoAE, IrhoE, d, l
 
 def qObj2picos(r):
     l = r.full()
@@ -100,31 +135,33 @@ def quadrature(m):
 
 
 """
-T, W = quadrature(10)
+T, W = quadrature(6)
 D1 = 0
 D2 = 0
 
-r, s, D1 = rhoSigmaSample(2)
-lam = findLam(r,s)
+r, s, D1, lam = DI_sample()
 D2 = relativeEntropyKosaki(r, s, lam)
 
 print(D1, D2)
 """
 
-N = 1000
+N = 2000
 
 L = []
 
 for i in range(1, 11):
     errRel = 0.0
     T, W = quadrature(i)
-    for _ in range(N):
-        dim = np.random.randint(2,11)
-        r, s, D1, lam = rhoSigmaSample(dim)
+    for k in range(N):
+        #dim = np.random.randint(2,11)
+        #r, s, D1, lam = rhoSigmaSample(dim)
+        r, s, D1, lam = DI_sample()
         D2 = relativeEntropyKosaki(r, s, lam)
         errRel += abs(D2-D1)/D1*100
+        """
         if abs(D2-D1)/D1*100 > 100:
             print(D1, D2, abs(D2-D1)/D1*100, lam)
+        """
     errRel /= N
     print(len(T), errRel)
     L += [[len(T), errRel]]
@@ -132,8 +169,8 @@ for i in range(1, 11):
 
 L = np.array(L)
 np.savetxt("./data/kosaki/radau", L)
-
 """
+
 plt.plot(L[:,0], L[:,1])
-plt.savefig("./data/kosaki/fejer_1.png")
+plt.savefig("./data/kosaki/radau_DI.png")
 """
