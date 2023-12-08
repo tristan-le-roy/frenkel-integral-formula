@@ -34,7 +34,7 @@ def compute_entropy():
         new_obj = objective(ti)
         sdp.set_objective(new_obj)
         sdp.solve()
-        ent += wi/ti * -sdp.dual
+        ent += wi/(ti) * -sdp.dual
     """
     for i in range(len(Tp)):
         wi = Wp[i]
@@ -45,10 +45,63 @@ def compute_entropy():
         print(sdp.dual)
         ent += wi/(ti+1) * -sdp.dual
     """
-    """
-    for t in np.linspace()
-    """
+    return (ent - 1)
+
+def compute_entropy_linear(m):
+
+    new_obj = objective(1)
+    sdp.set_objective(new_obj)
+    sdp.solve()
+    ent = -(1+(m-1)*log(1-1/m))*sdp.dual
+
+    new_obj = objective(1/m)
+    sdp.set_objective(new_obj)
+    sdp.solve()
+    ent -= 2*log(2)*sdp.dual
+
+    for i in range(2,m):
+        new_obj = objective(i/m)
+        sdp.set_objective(new_obj)
+        sdp.solve()
+        ent -= ((i+1)*log(1+1/i) + (i-1)*log(1-1/i))*sdp.dual
+    
     return (ent-1)/log(2)
+
+def compute_entropy_linear2(k):
+    X = [0]
+    X += [0.5 - 0.5**(i+1) for i in range(1,k)]
+    X += [0.5]
+    X += [0.5 + 0.5**(k-i+1) for i in range(1,k)]
+    X += [1]
+
+    new_obj = objective(X[-1])
+    sdp.set_objective(new_obj)
+    sdp.solve()
+    ent = -(1+X[-2]*log(X[-2])/(1-X[-2]))*sdp.dual
+
+    new_obj = objective(X[1])
+    sdp.set_objective(new_obj)
+    sdp.solve()
+    ent -= X[2]*log(X[2]/X[1])/(X[2]-X[1])*sdp.dual
+
+    for i in range(2,2*k):
+        new_obj = objective(X[i])
+        sdp.set_objective(new_obj)
+        sdp.solve()
+        ent -= (X[i+1]*log(X[i+1]/X[i])/(X[i+1]-X[i]) - X[i-1]*log(X[i]/X[i-1])/(X[i]-X[i-1]))*sdp.dual
+    
+    return (ent-1)/log(2)
+
+def print_trace_minus(sdp, sys, eta, m):
+    sdp.process_constraints(momentequalities=score_constraints(sys, eta))
+    L = [[0.0, 0.0]]
+    for i in range(m):
+        xi = (i+1)/m
+        new_obj = objective(xi)
+        sdp.set_objective(new_obj)
+        sdp.solve()
+        L += [[xi, -sdp.dual/xi]]
+    return L
 
 def compute_entropyG():
     ent = 0.0
@@ -114,9 +167,9 @@ def generate_quadrature(m):
 
          m    --    number of nodes in quadrature / 2
     """
-    t, w = chaospy.quadrature.fejer_1(m, (0,1))
+    #t, w = chaospy.quadrature.fejer_1(m, (0,1))
     #t, w = chaospy.quadrature.gaussian(m, chaospy.Uniform(0, 1))
-    #t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0, 1), 1)
+    t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0, 1), 1)
     t = t[0]
     return t, w
 
@@ -148,12 +201,12 @@ def get_subs():
 
     # Finally we note that Alice and Bob's operators should All commute with Eve's ops
     for a in ncp.flatten([A,B]):
-        for Zi in Z:
-            for z in Zi:
-                subs.update({z*a : a*z})
-    for Zi in Z:
-        for z in ncp.flatten(Zi):
-            subs.update({z*z:z})
+        #for Zi in Z:
+        for z in Z:
+            subs.update({z*a : a*z})
+    #for Zi in Z:
+    for z in Z:
+        subs.update({z*z:z})
 
     return subs
 
@@ -169,9 +222,12 @@ def get_extra_monomials():
     Bflat = ncp.flatten(B)
     for a in Aflat:
         for b in Bflat:
-            for Zi in Z:
-                for z in Zi:
-                    monos += [a*b*z]
+            #for Zi in Z:
+            for z in Z:
+                monos += [a*b*z]
+                monos += [a*b]
+                monos += [a*z]
+                monos += [b*z]
 
     return monos[:]
 
@@ -183,9 +239,9 @@ from sympy.physics.quantum.dagger import Dagger
 import mosek
 import chaospy
 
-LEVEL = 2                          # NPA relaxation level
-M = 5                              # Number of nodes / 2 in gaussian quadrature
-T, W = generate_quadrature(M)      # Nodes, weights of quadrature
+LEVEL = 1                          # NPA relaxation level
+M = 100                              # Number of nodes / 2 in gaussian quadrature
+#T, W = generate_quadrature(M)      # Nodes, weights of quadrature
 #Tp, Wp = generate_quadrature1(M1)
 
 # number of outputs for each inputs of Alice / Bobs devices
@@ -198,7 +254,8 @@ Z_config = [2]
 # Operators in problem
 A = [Ai for Ai in ncp.generate_measurements(A_config, 'A')]
 B = [Bj for Bj in ncp.generate_measurements(B_config, 'B')]
-Z = [ncp.generate_operators('Z'+str(i), 2, hermitian=1) for i in range(len(T))]
+Z = ncp.generate_operators('Z', 2, hermitian=1)
+#Z = [ncp.generate_operators('Z'+str(i), 2, hermitian=1) for i in range(len(T))]
 
 substitutions = get_subs()             # substitutions used in ncpol2sdpa
 moment_ineqs = []                      # moment inequalities
@@ -212,8 +269,8 @@ test_sys = [pi/4, 0, pi/2, pi/4, -pi/4, 0]
 test_eta = 1.0
 
 
-ops = ncp.flatten([A,B,ncp.flatten(Z)])        # Base monomials involved in problem
-obj = objectiveG()    # Placeholder objective function
+ops = ncp.flatten([A,B,Z])        # Base monomials involved in problem
+obj = objective(0)    # Placeholder objective function
 
 sdp = ncp.SdpRelaxation(ops, verbose=0, normalized=True, parallel=0)
 sdp.get_relaxation(level = LEVEL,
@@ -228,15 +285,27 @@ sdp.get_relaxation(level = LEVEL,
 
 ref = np.loadtxt("./data/reference")
 
+"""
 L = []
-errRel = 0.0
-for i in range(1,len(ref[:,0])):
+for eta in np.linspace(0.82, 1.0, 19)[::-1]:
+    sdp.process_constraints(momentequalities=score_constraints(test_sys, eta))
+    ent = -compute_entropy_linear(3)
+    L += [[eta, ent]]
+    print(eta, ent)
+"""
+"""
+L = []
+for i in range(len(ref[:,0])):
     eta = ref[i,0]
     ent_ref = ref[i,1]
     sdp.process_constraints(momentequalities=score_constraints(test_sys, eta))
-    ent_fr = -compute_entropyG()
+    ent_fr = -compute_entropy_linear2(M)
     L += [[eta, ent_fr]]
-    errRel += abs(ent_fr-ent_ref)/ent_ref*100
-    print(eta, ent_fr, ent_ref, abs(ent_fr-ent_ref)/ent_ref*100, abs(ent_fr-ent_ref))
+    print(eta, ent_fr, ent_ref)
 
-np.savetxt('./data/DI-entropy/frenkel_g_'+str(len(T)), L)
+np.savetxt('./data/DI-entropy/frenkel_linear2_'+str(2*M), L)
+
+"""
+for eta in [i/100 for i in range(82,101)]:
+    L = print_trace_minus(sdp, test_sys, eta, M)
+    np.savetxt('./data/TraceMinus/trmd_'+str(int(100*eta))+'_'+str(M), L)

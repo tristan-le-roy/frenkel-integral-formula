@@ -23,12 +23,24 @@ fr_pbp_6 = np.loadtxt("./data/DI-entropy/frenkel_pbp_6")
 fr_pbp_7 = np.loadtxt("./data/DI-entropy/frenkel_pbp_7")
 fr_pbp_8 = np.loadtxt("./data/DI-entropy/frenkel_pbp_8")
 
-"""
+fr_ra_2 = np.loadtxt("./data/DI-entropy/frenkel_radau_2")
+fr_ra_4 = np.loadtxt("./data/DI-entropy/frenkel_radau_4")
+fr_ra_6 = np.loadtxt("./data/DI-entropy/frenkel_radau_6")
+fr_ra_8 = np.loadtxt("./data/DI-entropy/frenkel_radau_8")
+
+fr_lin_2 = np.loadtxt("./data/DI-entropy/frenkel_linear_2")
+fr_lin_3 = np.loadtxt("./data/DI-entropy/frenkel_linear_3")
+fr_lin_4 = np.loadtxt("./data/DI-entropy/frenkel_linear_4")
+fr_lin_5 = np.loadtxt("./data/DI-entropy/frenkel_linear_5")
+fr_lin_6 = np.loadtxt("./data/DI-entropy/frenkel_linear_6")
+fr_lin_7 = np.loadtxt("./data/DI-entropy/frenkel_linear_7")
+fr_lin_8 = np.loadtxt("./data/DI-entropy/frenkel_linear_8")
+
 ko_pbp_2 = np.loadtxt("./data/DI-entropy/kosaki_pbp_2")
 ko_pbp_4 = np.loadtxt("./data/DI-entropy/kosaki_pbp_4")
 ko_pbp_6 = np.loadtxt("./data/DI-entropy/kosaki_pbp_6")
 ko_pbp_8 = np.loadtxt("./data/DI-entropy/kosaki_pbp_8")
-"""
+
 
 ref = np.loadtxt("./data/reference")
 
@@ -45,7 +57,7 @@ plt.ylim(0, 1.1)
 plt.legend()
 
 plt.savefig("./data/DI-entropy/frenkel_global.png")
-"""
+
 
 plt.plot(fr_pbp_1[:,0], fr_pbp_1[:,1], label="order 1")
 plt.plot(fr_pbp_2[:,0], fr_pbp_2[:,1], label="order 2")
@@ -61,7 +73,7 @@ plt.xlim(0.8,1.0)
 plt.ylim(0, 1.1)
 plt.legend()
 plt.savefig("./data/DI-entropy/frenkel_point_by_point.png")
-"""
+
 plt.plot(ko_pbp_2[:,0], ko_pbp_2[:,1], label="order 2")
 plt.plot(ko_pbp_4[:,0], ko_pbp_4[:,1], label="order 4")
 plt.plot(ko_pbp_6[:,0], ko_pbp_6[:,1], label="order 6")
@@ -81,28 +93,35 @@ plt.plot(le_pr[:,0], le_pr[:,1], label="legendre_proxy")
 plt.plot(ra[:,0], ra[:,1], label="radau")
 
 plt.legend()
-"""
 
-plt.plot(fr_g_2[:,0], fr_g_2[:,1], label="frenkel global")
-plt.plot(fr_pbp_2[:,0], fr_pbp_2[:,1], label="frenkel point by point")
-plt.plot(ko_pbp_2[:,0], ko_g_2[:,1], label="kosaki point by point")
+
+plt.plot(fr_g_1[:,0], fr_g_1[:,1], label="frenkel global order 1")
+plt.plot(fr_g_2[:,0], fr_g_2[:,1], label="frenkel global order 2")
+plt.plot(ko_pbp_2[:,0], ko_pbp_2[:,1], label="kosaki point by point order 2")
+plt.plot(ref[:,0], ref[:,1], label="reference", linestyle="dashed")
 
 plt.xlim(0.8,1.0)
 plt.ylim(0, 1.1)
 plt.legend()
 plt.savefig("./data/DI-entropy/comparison_2.png")
 
-plt.plot(fr_g_4[:,0], fr_g_4[:,1], label="frenkel global")
-plt.plot(fr_pbp_4[:,0], fr_pbp_4[:,1], label="frenkel point by point")
-plt.plot(ko_pbp_4[:,0], ko_g_4[:,1], label="kosaki point by point")
+
+
+#plt.plot(fr_g_3[:,0], fr_g_3[:,1], label="frenkel global order 3")
+plt.plot(fr_g_4[:,0], fr_g_4[:,1], label="frenkel order 4")
+plt.plot(ko_pbp_4[:,0], ko_pbp_4[:,1], label="kosaki point by point order 4")
+plt.plot(ref[:,0], ref[:,1], label="reference", linestyle="dashed")
 
 plt.xlim(0.8,1.0)
 plt.ylim(0, 1.1)
 plt.legend()
 plt.savefig("./data/DI-entropy/comparison_4.png")
+"""
 
-plt.plot(fr_pbp_6[:,0], fr_pbp_6[:,1], label="frenkel point by point")
-plt.plot(ko_pbp_6[:,0], ko_g_6[:,1], label="kosaki point by point")
+"""
+plt.plot(fr_pbp_6[:,0], fr_pbp_6[:,1], label="frenkel point by point order 6")
+plt.plot(ko_pbp_6[:,0], ko_pbp_6[:,1], label="kosaki point by point order 6")
+plt.plot(ref[:,0], ref[:,1], label="reference", linestyle="dashed")
 
 plt.xlim(0.8,1.0)
 plt.ylim(0, 1.1)
@@ -121,3 +140,55 @@ plt.xlim(2,20)
 plt.ylim(0,60)
 
 plt.savefig("./data/quadrature_test/comparison.png")
+
+
+plt.plot(fr_ra_2[:,0], fr_ra_2[:,1], label = "order 2")
+plt.plot(fr_ra_4[:,0], fr_ra_4[:,1], label = "order 4")
+plt.plot(fr_ra_6[:,0], fr_ra_6[:,1], label = "order 6")
+plt.plot(fr_ra_8[:,0], fr_ra_8[:,1], label = "order 8")
+plt.plot(ref[:,0], ref[:,1], label = "reference", linestyle="dashed")
+
+plt.xlim(0.8, 1.0)
+plt.ylim(0.0, 1.0)
+plt.legend()
+
+plt.savefig("./data/frenkel_radau.png")
+
+
+plt.plot(fr_lin_2[:,0], fr_lin_2[:,1], label = "order 2")
+#plt.plot(fr_lin_2[:,0], fr_lin_3[:,1], label = "order 3")
+plt.plot(fr_lin_4[:,0], fr_lin_4[:,1], label = "order 4")
+#plt.plot(fr_lin_5[:,0], fr_lin_5[:,1], label = "order 5")
+plt.plot(fr_lin_6[:,0], fr_lin_6[:,1], label = "order 6")
+#plt.plot(fr_lin_7[:,0], fr_lin_7[:,1], label = "order 7")
+plt.plot(fr_lin_8[:,0], fr_lin_8[:,1], label = "order 8")
+plt.plot(ref[:,0], ref[:,1], label = "reference", linestyle="dashed")
+
+plt.xlim(0.8, 1.0)
+plt.ylim(0.0, 1.0)
+plt.legend()
+
+plt.savefig("./data/frenkel_linear_even.png")
+
+
+plt.plot(fr_lin_8[:,0], fr_lin_8[:,1], label = "frenkel linear")
+plt.plot(ko_pbp_8[:,0], ko_pbp_8[:,1], label = "kosaki radau")
+plt.plot(ref[:,0], ref[:,1], label = "reference", linestyle="dashed")
+
+plt.xlim(0.8, 1.0)
+plt.ylim(0.0, 1.0)
+plt.legend()
+
+plt.savefig("./data/fr_lin_ko_ra_comparison_8.png")
+"""
+
+trm50 = [np.loadtxt('./data/TraceMinus/trm_'+str(i)+'_50') for i in range(82,101)]
+trm100 = [np.loadtxt('./data/TraceMinus/trm_'+str(i)+'_100') for i in range(82,101)]
+trmd100 = [np.loadtxt('./data/TraceMinus/trmd_'+str(i)+'_100') for i in range(82,101)]
+
+for i in range(19):
+    plt.plot(trmd100[i][:,0], trmd100[i][:,1])
+    plt.xlim(0.0, 1.0)
+    plt.ylim(0.0, 1.0)
+    plt.savefig('./data/TraceMinus/trmd100_'+str(i+82)+".png")
+    plt.close()

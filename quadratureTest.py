@@ -82,8 +82,8 @@ def quadrature(m):
         m   --  order of the quadrature rule (times two for some rules)
     """
     #t, w = chaospy.quadrature.fejer_2(m, (0,1))
-    #t, w = chaospy.quadrature.fejer_1(m, (0,1))
-    t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0,1), 1)
+    t, w = chaospy.quadrature.fejer_1(m, (0,1))
+    #t, w = chaospy.quadrature.radau(m, chaospy.Uniform(0,1), 1)
     #t, w = chaospy.quadrature.gaussian(m, chaospy.Uniform(0,1))
     #t, w = chaospy.quadrature.legendre_proxy(m, (0,1))
     #t, w = chaospy.quadrature.legendre(m, 0, 1)
@@ -115,35 +115,35 @@ def testQuad(b, rho, sigma):
         wi = W[i]
         ti = T[i]
         I += wi/ti * traceMinus(rho - ti*sigma)
-
+    """
     for i in range(len(Tp)):
         wi   = Wp[i]
         ti = Tp[i]
         I += wi/(ti+b) * traceMinus((1+ti/b)*sigma - rho)
+    """
     return I
 
-B = 0.0
-Bmin = 10.0
-for i in range(10000):
-    _, _, b, _ = DI_sample()
-    B += b
-    if b < Bmin:
-        Bmin = b
+def linearApproximation(m, rho, sigma):
+    step = 1/m
+    I = (1 + (m-1)*log(1-1/m))*traceMinus(rho - sigma) + 2*log(2)*traceMinus(rho-sigma/m)
+    for i in range(2,m):
+        #xi = i*step
+        #I += ((xi+step)*traceMinus(rho - xi*sigma) - xi*traceMinus(rho - (xi+step)*sigma))*log((xi+step)/xi)/step
+        I += ((i+1)*log(1+1/i) + (i-1)*log(1-1/i))*traceMinus(rho - i/m*sigma)
+    #I += traceMinus(rho-sigma)
+    return I
 
-B /= 10000
-print(B, Bmin)
+r, s, b, D1 = rhoSigmaSample(2)
+
+T,W = quadrature(8)
+#Tp,Wp = quadrature(10)
+
+D2 = testQuad(b, r, s)
+D3 = linearApproximation(9, r, s)
+
+print(D1, D2, D3)
 
 """
-rAE, rE, b, D1 = DI_sample()
-
-T,W = quadrature(2)
-Tp,Wp = quadrature(10)
-
-D2 = testQuad(b, rAE, rE)
-
-print(D1, D2)
-
-
 N = 1000
 
 L = []
@@ -165,5 +165,4 @@ for i in range(1, 11):
 
 L = np.array(L)
 np.savetxt("./data/quadrature_test/radau_DI", L)
-
 """
