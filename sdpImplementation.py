@@ -6,16 +6,16 @@ def objective(t):
         obj += t*Z[a] - Z[a]*M[a]
     return -obj
 
-def objectiveG():
+def objectiveG(m):
     obj = 0.0
     M = [A[0][0], 1-A[0][0]]
-    for i in range(len(T)):
-        ti = T[i]
-        wi = W[i]
-        ki = wi/ti
-        for a in range(2):
-            obj += wi*Z[i][a] - ki * Z[i][a]*M[a]
-    return -obj
+
+    for a in range(2):
+        obj -= (1+(m-1)*log(1-1/m))*(Z[0][a] - Z[0][a]*M[a])
+        obj -= 2*log(2)*(1/m*Z[1][a] - Z[1][a]*M[a])
+        for i in range(2,m):
+            obj -= ((i+1)*log(1+1/i) + (i-1)*log(1-1/i))*(i/m*Z[i][a] - Z[i][a]*M[a])
+    return obj
 
 """
 def objective1(t):
@@ -201,12 +201,12 @@ def get_subs():
 
     # Finally we note that Alice and Bob's operators should All commute with Eve's ops
     for a in ncp.flatten([A,B]):
-        #for Zi in Z:
-        for z in Z:
-            subs.update({z*a : a*z})
-    #for Zi in Z:
-    for z in Z:
-        subs.update({z*z:z})
+        for Zi in Z:
+            for z in Zi:
+                subs.update({z*a : a*z})
+    for Zi in Z:
+        for z in Zi:
+            subs.update({z*z:z})
 
     return subs
 
@@ -222,12 +222,12 @@ def get_extra_monomials():
     Bflat = ncp.flatten(B)
     for a in Aflat:
         for b in Bflat:
-            #for Zi in Z:
-            for z in Z:
-                monos += [a*b*z]
-                monos += [a*b]
-                monos += [a*z]
-                monos += [b*z]
+            for Zi in Z:
+                for z in Zi:
+                    monos += [a*b*z]
+                    monos += [a*b]
+                    monos += [a*z]
+                    monos += [b*z]
 
     return monos[:]
 
@@ -240,7 +240,7 @@ import mosek
 import chaospy
 
 LEVEL = 1                          # NPA relaxation level
-M = 100                              # Number of nodes / 2 in gaussian quadrature
+M = 4                              # Number of nodes / 2 in gaussian quadrature
 #T, W = generate_quadrature(M)      # Nodes, weights of quadrature
 #Tp, Wp = generate_quadrature1(M1)
 
@@ -254,8 +254,8 @@ Z_config = [2]
 # Operators in problem
 A = [Ai for Ai in ncp.generate_measurements(A_config, 'A')]
 B = [Bj for Bj in ncp.generate_measurements(B_config, 'B')]
-Z = ncp.generate_operators('Z', 2, hermitian=1)
-#Z = [ncp.generate_operators('Z'+str(i), 2, hermitian=1) for i in range(len(T))]
+#Z = ncp.generate_operators('Z', 2, hermitian=1)
+Z = [ncp.generate_operators('Z'+str(i), 2, hermitian=1) for i in range(M)]
 
 substitutions = get_subs()             # substitutions used in ncpol2sdpa
 moment_ineqs = []                      # moment inequalities
@@ -270,7 +270,7 @@ test_eta = 1.0
 
 
 ops = ncp.flatten([A,B,Z])        # Base monomials involved in problem
-obj = objective(0)    # Placeholder objective function
+obj = objectiveG(M)    # Placeholder objective function
 
 sdp = ncp.SdpRelaxation(ops, verbose=0, normalized=True, parallel=0)
 sdp.get_relaxation(level = LEVEL,
@@ -285,14 +285,14 @@ sdp.get_relaxation(level = LEVEL,
 
 ref = np.loadtxt("./data/reference")
 
-"""
+
 L = []
 for eta in np.linspace(0.82, 1.0, 19)[::-1]:
     sdp.process_constraints(momentequalities=score_constraints(test_sys, eta))
-    ent = -compute_entropy_linear(3)
+    ent = -compute_entropyG()
     L += [[eta, ent]]
     print(eta, ent)
-"""
+
 """
 L = []
 for i in range(len(ref[:,0])):
@@ -305,7 +305,8 @@ for i in range(len(ref[:,0])):
 
 np.savetxt('./data/DI-entropy/frenkel_linear2_'+str(2*M), L)
 
-"""
+
 for eta in [i/100 for i in range(82,101)]:
     L = print_trace_minus(sdp, test_sys, eta, M)
     np.savetxt('./data/TraceMinus/trmd_'+str(int(100*eta))+'_'+str(M), L)
+"""

@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from math import sqrt
 
 f1 = np.loadtxt("./data/quadrature_test/fejer_1")
 f2 = np.loadtxt("./data/quadrature_test/fejer_2")
@@ -41,6 +42,18 @@ ko_pbp_4 = np.loadtxt("./data/DI-entropy/kosaki_pbp_4")
 ko_pbp_6 = np.loadtxt("./data/DI-entropy/kosaki_pbp_6")
 ko_pbp_8 = np.loadtxt("./data/DI-entropy/kosaki_pbp_8")
 
+ko_global_AB_2 = np.genfromtxt("./data/DI-entropy/CHSH/chsh_global_2M_full.csv", delimiter=',')
+ko_global_AB_4 = np.genfromtxt("./data/DI-entropy/CHSH/chsh_global_4M_full.csv", delimiter=',')
+ko_global_AB_6 = np.genfromtxt("./data/DI-entropy/CHSH/chsh_global_6M_full.csv", delimiter=',')
+ko_global_AB_8 = np.genfromtxt("./data/DI-entropy/CHSH/chsh_global_8M_full.csv", delimiter=',')
+
+fr_lin_AB_2 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_2")
+fr_lin_AB_4 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_4")
+fr_lin_AB_6 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_6")
+fr_lin_AB_8 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_8")
+fr_lin_AB_10 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_10")
+
+ref_AB = np.genfromtxt("./data/DI-entropy/CHSH/roger_global_chsh.csv", delimiter=',')
 
 ref = np.loadtxt("./data/reference")
 
@@ -180,7 +193,7 @@ plt.ylim(0.0, 1.0)
 plt.legend()
 
 plt.savefig("./data/fr_lin_ko_ra_comparison_8.png")
-"""
+
 
 trm50 = [np.loadtxt('./data/TraceMinus/trm_'+str(i)+'_50') for i in range(82,101)]
 trm100 = [np.loadtxt('./data/TraceMinus/trm_'+str(i)+'_100') for i in range(82,101)]
@@ -192,3 +205,32 @@ for i in range(19):
     plt.ylim(0.0, 1.0)
     plt.savefig('./data/TraceMinus/trmd100_'+str(i+82)+".png")
     plt.close()
+
+
+plt.plot(ko_global_AB_2[0], ko_global_AB_2[1], label="M = 2")
+plt.plot(ko_global_AB_4[0], ko_global_AB_4[1], label="M = 4")
+plt.plot(ko_global_AB_6[0], ko_global_AB_6[1], label="M = 6")
+plt.plot(ko_global_AB_8[0], ko_global_AB_8[1], label="M = 8")
+
+plt.plot(ref_AB[0], ref_AB[1], label = "Upper bound", linestyle = "dashed")
+
+plt.xlim(0.75, (sqrt(2)+2)/4)
+plt.ylim(0, 1.6)
+plt.legend()
+
+plt.savefig("./data/DI-entropy/CHSH/kosaki_AB.png")
+"""
+
+plt.plot(fr_lin_AB_2[:,0], fr_lin_AB_2[:,1], label = "M = 2")
+plt.plot(fr_lin_AB_4[:,0], fr_lin_AB_4[:,1], label = "M = 4")
+plt.plot(fr_lin_AB_6[:,0], fr_lin_AB_6[:,1], label = "M = 6")
+plt.plot(fr_lin_AB_8[:,0], fr_lin_AB_8[:,1], label = "M = 8")
+plt.plot(fr_lin_AB_10[:,0], fr_lin_AB_10[:,1], label = "M = 10")
+
+plt.plot(ref_AB[0], ref_AB[1], label = "Upper bound", linestyle = "dashed")
+
+plt.xlim(0.75, (sqrt(2)+2)/4)
+plt.ylim(0, 1.6)
+plt.legend()
+
+plt.savefig("./data/DI-entropy/CHSH/frenkel_AB.png")
