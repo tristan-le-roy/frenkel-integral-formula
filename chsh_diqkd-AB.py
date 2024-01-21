@@ -29,7 +29,7 @@ def generateXUniform(m):
     X = [(i+1)/m for i in range(m)]
     return X
 
-def generateXHarmonic(m):
+def generateXGeometrique(m):
     X = [1/2 - 1/2**(i+2) for i in range(int(m/2)-1)]
     X += [1/2]
     X += [1/2 + 1/2**(i+2) for i in range(int(m/2)-1)][::-1]
@@ -41,6 +41,10 @@ def generateXNM(m):
     X += [0.5]
     X += [1 - 1/3**(i+1) for i in range(int((m-1)/2))] 
     X += [1.0]
+    return X
+
+def generateXGeo0(m):
+    X = [1/2**i for i in range(m)][::-1]
     return X
 
 def compute_entropyG():
@@ -153,10 +157,10 @@ L = []
 for c_v in np.linspace(0.75, (sqrt(2)+2)/4, 20):
     sdp.process_constraints(momentequalities=score_constraints(c_v))
     ent = -compute_entropyG()
-    #L += [[c_v, ent]]
+    L += [[c_v, ent]]
     print(c_v, ent)
 
-"""
+
 np.savetxt("./data/DI-entropy/CHSH/fr_lin_AB_"+str(M), L)
-"""
+
 

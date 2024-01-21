@@ -52,6 +52,8 @@ fr_lin_AB_4 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_4")
 fr_lin_AB_6 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_6")
 fr_lin_AB_8 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_8")
 fr_lin_AB_10 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_10")
+fr_lin_AB_14 = np.loadtxt("./data/DI-entropy/CHSH/fr_lin_AB_14")
+
 
 ref_AB = np.genfromtxt("./data/DI-entropy/CHSH/roger_global_chsh.csv", delimiter=',')
 
@@ -222,10 +224,9 @@ plt.savefig("./data/DI-entropy/CHSH/kosaki_AB.png")
 """
 
 plt.plot(fr_lin_AB_2[:,0], fr_lin_AB_2[:,1], label = "M = 2")
-plt.plot(fr_lin_AB_4[:,0], fr_lin_AB_4[:,1], label = "M = 4")
 plt.plot(fr_lin_AB_6[:,0], fr_lin_AB_6[:,1], label = "M = 6")
-plt.plot(fr_lin_AB_8[:,0], fr_lin_AB_8[:,1], label = "M = 8")
 plt.plot(fr_lin_AB_10[:,0], fr_lin_AB_10[:,1], label = "M = 10")
+plt.plot(fr_lin_AB_14[:,0], fr_lin_AB_14[:,1], label = "M = 14")
 
 plt.plot(ref_AB[0], ref_AB[1], label = "Upper bound", linestyle = "dashed")
 
