@@ -83,6 +83,12 @@ def get_subs():
     for a in ncp.flatten([A,B]):
         for z in ncp.flatten(Z):
             subs.update({z*a : a*z})
+
+    for i in range(M):
+        for a in range(2):
+            for b in range(2):
+                if b > a:
+                    subs.update({Z[i][a][b]: Z[i][b][a]})
     
     for z in ncp.flatten(Z):
         subs.update({z*z:z})
