@@ -72,10 +72,6 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
     Dagger_substitutions.update({Dagger(Y[l][i][j]): Y[l][j][i] for l in range(m) for i in range(dA) for j in range(dA)})
     Dagger_substitutions.update({Dagger(Z[l][i][j]): Z[l][j][i] for l in range(m) for i in range(dA) for j in range(dA)})
 
-    square_substitutions = {}
-    square_substitutions.update({Y[l][i][j]*Y[l][i][j]: Y[l][i][j] for l in range(m) for i in range(dA) for j in range(dA)})
-    square_substitutions.update({Z[l][i][j]*Z[l][i][j]: Z[l][i][j] for l in range(m) for i in range(dA) for j in range(dA)})
-
     # Build a function that will simplify any monomial containing Y and Z using commutation relation
     simplify_func = build_simplify_func(ops,oporder,[Dagger_substitutions])
 
@@ -91,6 +87,18 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
         else:
             raise Exception("Problem, unknown monb type = ", type(monb), ", monb = ", monb)
 
+
+    mom_eq = []
+    for l in range(m):
+        for i in range(dA):
+            for j in range(dA):
+                for a1 in range(dA):
+                    for a2 in range(dA):
+                        mom_eq_Y = [((i, j, Y[l][a1][a3]*Y[l][a3][a2]), -1) for a3 in range(dA)]
+                        mom_eq_Z = [((i, j, Z[l][a1][a3]*Z[l][a3][a2]), -1) for a3 in range(dA)]
+                        mom_eq_Y += [((i, j, Y[l][a1][a2]), 1)]
+                        mom_eq_Z += [((i, j, Z[l][a1][a2]), 1)]
+                        mom_eq += [mom_eq_Y, mom_eq_Z]
 
     # Construct symmetry action map that swaps Y and Z
     YZ_replacement_rules = {}
@@ -127,7 +135,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
             #  and   s is the index for   (b',Y[l]_{x,i'})
             #  where b=(ij) and b'=(i'j) are two distinct blocks (within the same "A block")
         for x in range(dA):
-            for i in range(x+1):
+            for i in range(dA):
                 for b in range(dA*dB):
                 #for j in range(1,dB):
                     #b = dB*i+j # block number for (i,j), in {0,...,dA*dB-1}
@@ -140,6 +148,9 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
 
     moment_subs = {(i,j,S.One): rho[i,j] for i in range(dA*dB) for j in range(dA*dB)}
     ncbr.do_moment_subs(moment_subs)
+    
+    for me in mom_eq:
+        ncbr.add_moment_linear_eq(me, 0)
     
     # Set cost function
     obj = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
@@ -169,9 +180,13 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
         #ncbr.solve_with_cvxpy()
         primal, dual, x_mat, y_mat, x_vec, status = ncbr.solve_with_scs(form='standard',max_iters=50000)
     elif solver == 'mosek':
-        primal, dual, status = ncbr.solve_with_mosek()
+        primal, dual, mom_mat, status = ncbr.solve_with_mosek()
     else:
         raise Exception("Unrecognized solver")
+    
+    mom_cons = [[mom_mat[i][j] for j in range(dA*dB)] for i in range(dA*dB)]
+    print(mom_cons)
+    print(rho)
     """
     # the gamma_{ij} such that [p_{ij} - gamma_{ij} I] is sos
     # these should satisfy np.sum(rho*gamma) == dual
@@ -201,7 +216,7 @@ def werner(p,d):
     Psym = np.zeros((d,d,d,d))
     Pasym = np.zeros((d,d,d,d))
 
-    for i in range(d):
+    for i in range(d):  
         for j in range(d):
             I[(i,i,j,j)] = 1
             F[(i,j,j,i)] = 1
@@ -220,8 +235,8 @@ if __name__ == "__main__":
     d = 2   
     dimA = d
     dimB = d
-    p = 0.4
+    p = 0.3
     rho = wernerrho(p,d)
     
     dimrho = dimA*dimB
-    squashed_entanglement_lb(rho,[dimA,dimB],m=4,solver='mosek')
+    squashed_entanglement_lb(rho,[dimA,dimB],m=2,solver='mosek')

@@ -1,16 +1,129 @@
-def generate_point_coeff(m):
-    #Points used in the integral approximation
-    p = [1/3**(i+1) for i in range(int((m-1)/2))][::-1]
-    p += [0.5]
-    p += [1 - 1/3**(i+1) for i in range(int((m-1)/2))] 
-    p += [1.0]
+import numpy as np
+from math import log
+from scipy import sparse
+from scipy.sparse import lil_matrix, csc_matrix
+from scipy.optimize import minimize, NonlinearConstraint
+from scipy.linalg import logm, sqrtm
+from sympy.core.evalf import N
+from sympy.physics.quantum import dagger
 
-    #Coefficients associated with each points
-    c = [(p[1]/(p[1]-p[0]))*log(p[1]/p[0])]
-    for i in range(1, m-1):
-        c += [(p[i+1]/(p[i+1]-p[i])*log(p[i+1]/p[i]) - p[i-1]/(p[i]-p[i-1])*log(p[i]/p[i-1]))]
-    c += [(1+p[-2]*log(p[-2])/(1-p[-2]))]
-    return p, c
+from ncblockrelaxation_test import *
+
+import sympy
+from sympy.physics.quantum.operator import Operator
+from sympy.physics.quantum.dagger import Dagger
+from sympy import S
+from sympy import sympify
+
+import chaospy
+from ncpol2sdpa.nc_utils import flatten
+
+def generateXNM(m):
+    X = [1/3**(i+1) for i in range(int((m-1)/2))][::-1]
+    X += [0.5]
+    X += [1 - 1/3**(i+1) for i in range(int((m-1)/2))] 
+    X += [1.0]
+    return X
+
+def generate_coeff_integral(X):
+    C = [(X[1]/(X[1]-X[0]))*log(X[1]/X[0])]
+    for i in range(1, len(X)-1):
+        C += [(X[i+1]/(X[i+1]-X[i])*log(X[i+1]/X[i]) - X[i-1]/(X[i]-X[i-1])*log(X[i]/X[i-1]))]
+    C += [(1+X[-2]*log(X[-2])/(1-X[-2]))]
+    return C
+
+def squashed_entanglement_lb(rho,dim,m=4):
+
+    # Use SDP relaxation to find lower bound on squashed entanglement
+
+    if len(dim) != 2:
+        raise Exception("Invalid argument dim: len(dim) != 2")
+
+    dA = dim[0]
+    dB = dim[1]
+
+    if dA*dB != len(rho):
+        raise Exception("Invalid argument dim: prod(dim) != len(rho)")
+
+    # Compute t_i, w_i
+    tvec = generateXNM(m)
+    cvec = generate_coeff_integral(tvec)
+
+    print("m = ", m)
+    print("  tvec=", tvec)
+    print("  cvec=", cvec)
+
+    #Form of the SDP
+    Z = [[[Operator('Z'+str(l)+str(i)+str(j)) for j in range(dA)] for i in range(dA)] for l in range(m)]
+    ops = flatten(Z)
+    
+    dagger_substitutions = {Dagger(Z[l][i][j]): Z[l][j][i] for l in range(m) for i in range(dA) for j in range(dA)}
+    simplify_func = build_simplify_subs_func([dagger_substitutions])
+
+    def simplify_func_blocks(monb):
+        # This function, simplify_func_blocks, can take a pair (b,mon) where
+        # mon is a SymPy expression and b is the block
+        if isinstance(monb,sympy.Expr):
+            return simplify_func(monb)
+        elif type(monb) == tuple and len(monb) == 2:
+            return (monb[0],simplify_func(monb[1]))
+        elif type(monb) == tuple and len(monb) == 3:
+            return (monb[0],monb[1],simplify_func(monb[2]))
+        else:
+            raise Exception("Problem, unknown monb type = ", type(monb), ", monb = ", monb)
+
+    mom_eq = []
+    for l in range(m):
+        for i in range(dA):
+            for j in range(dA):
+                for a1 in range(dA):
+                    for a2 in range(dA):
+                        mom_eq_Z = [((i, j, Z[l][a1][a3]*Z[l][a3][a2]), -1) for a3 in range(dA)]
+                        mom_eq_Z += [((i, j, Z[l][a1][a2]), 1)]
+                        mom_eq += [mom_eq_Z]
+    
+    #print("Building custom monomial set")
+    monomial_set = []
+    # Add monomials of degree 0
+    monomial_set += [(b,S.One) for b in range(dA*dB)]
+    # Add select monomials of degree 1
+    monomial_set += [(b,Z[l][x][i]) for b in range(dA*dB) for i in range(dA) for x in range(dA) for l in range(m)]
+
+    ncbr = NCBlockRelaxationLight(verbose=1)
+
+    ncbr.build_block_moment_matrix(monomial_set, simplify_func=simplify_func_blocks, block=dA*dB, symmetry_action=None)
+
+    moment_subs = {(i,j,S.One): rho[i,j] for i in range(dA*dB) for j in range(dA*dB)}
+    print(moment_subs)
+    ncbr.do_moment_subs(moment_subs)
+    
+    for me in mom_eq:
+        ncbr.add_moment_linear_eq(me, 0)
+
+    # Set cost function
+    obj = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
+
+    #print("Forming objective function ...", end="")
+    for qq in range(m):
+        for i in range(dA):
+            for j in range(dA):
+                # Tr[rho_{E} Tr_A(Y)]:
+                obj -= tvec[qq]*cvec[qq]*Z[qq][i][j]*np.eye(dA*dB)
+                for k in range(dB):
+                    ik = dB*i+k # in {0,...,dA*dB-1}
+                    jk = dB*j+k # in {0,...,dA*dB-1}
+                    obj[ik,jk] += cvec[qq]*Z[qq][i][j]
+        
+    #print("Done.")
+    ncbr.create_cost_vector(obj)
+
+    primal, dual, mom_mat, status = ncbr.solve_with_mosek()
+
+    ncbnd = (2*(dA-1) - dual)/log(2)
+    print("Lower bound on Squashed entanglement = ", ncbnd)
+
+    return ncbnd
+
 
 # Werner states
 # Returns an array of shape (d,d,d,d)
@@ -21,7 +134,7 @@ def werner(p,d):
     Psym = np.zeros((d,d,d,d))
     Pasym = np.zeros((d,d,d,d))
 
-    for i in range(d):
+    for i in range(d):  
         for j in range(d):
             I[(i,i,j,j)] = 1
             F[(i,j,j,i)] = 1
@@ -35,96 +148,12 @@ def werner(p,d):
 def wernerrho(p,d):
     return werner(p,d).swapaxes(1,2).reshape((d**2,d**2))
 
-def objective():
-    obj = 0.0
-    for i in range(M):
-        for a1 in range(dA):
-            for a2 in range(dA):
-                for k in range(dB):
-                    a1b = a1*dB + k
-                    a2b = a2*dB + k
-                    b = k*dB + k 
-                    obj += P[i]*Y[a1b][i][a1][a2]*I[a2b]
-                    obj += P[i]*Z[a1b][i][a1][a2]*I[a2b]
-                    obj -= C[i]*P[i]*Y[b][i][a1][a2]*I[b]
-                    obj -= C[i]*P[i]*Z[b][i][a1][a2]*I[b]
-                    
-    return -obj
+if __name__ == "__main__":
 
-def get_substitutions():
-    subs = {}
-    Yflat = ncp.flatten(Y)
-    Zflat = ncp.flatten(Z)
-    Iflat = ncp.flatten(I)
-
-    for y in Yflat:
-        for z in Zflat:
-            for i in Iflat:
-                subs.update({z*y: y*z})
-                subs.update({i*y: y*i})
-                subs.update({i*z: z*i})
+    dimA = 2
+    dimB = 1
+    p = 0.3
+    rho = np.array([[p, p/2],[p/2, 1-p]])
     
-    for op in Yflat+Zflat+Iflat:
-        subs.update({Dagger(op): op})
-    
-    for i in range(dA*dB):
-        for j in range(dA*dB):
-            for l in range(M):
-                for a1 in range(dA):
-                    for a2 in range(dA):
-                        subs.update({Y[i][l][a1][a2]*Y[j][l][a1][a2]: Y[i][l][a1][a2]*I[j]})
-                        subs.update({Z[i][l][a1][a2]*Z[j][l][a1][a2]: Z[i][l][a1][a2]*I[j]})
-
-    return subs
-
-def score_constraints(rho):
-    constraints = []
-    for i in range(dA*dB):
-        for j in range(dA*dB):
-            constraints += [I[i]*I[j] - rho[i,j]]
-    return constraints[:]
-
-import numpy as np
-from math import log
-import mosek
-import ncpol2sdpa as ncp
-from sympy.physics.quantum.dagger import Dagger
-from sympy.physics.quantum.operator import Operator
-
-d = 2
-dA = d
-dB = d
-p = 0.0
-
-rho = wernerrho(p, d)
-
-LEVEL = 1
-M = 10
-P, C = generate_point_coeff(M)
-
-Y = [[[[Operator("(" + str(b)+", Y" + str(i) + str(a1) + str(a2) + ")") for a2 in range(dA)] for a1 in range(dA)] for i in range(M)] for b in range(dA*dB)]
-Z = [[[[Operator("(" + str(b)+", Z" + str(i) + str(a1) + str(a2) + ")") for a2 in range(dA)] for a1 in range(dA)] for i in range(M)] for b in range(dA*dB)]
-I = [Operator("(" + str(b) + ", 1)") for b in range(dA*dB)]
-
-ops = ncp.flatten([Y,Z,I])
-
-constraints = score_constraints(rho)
-subs = get_substitutions()
-
-sdp = ncp.SdpRelaxation(ops, verbose=1, normalized=True)
-sdp.get_relaxation(level = LEVEL,
-                   objective=objective(),
-                   momentequalities=constraints,
-                   substitutions=subs)
-
-
-for p in np.linspace(0.0, 0.6, 25):
-    rho = wernerrho(p, d)
-    sdp.process_constraints(momentequalities=score_constraints(rho))
-    sdp.solve('mosek')
-
-    #print("  d=", d)
-    print("  p=", p)
-    print("  Lower bound on the squashed entanglement:", sdp.dual)
-
-
+    dimrho = dimA*dimB
+    squashed_entanglement_lb(rho,[dimA,dimB],m=2)

@@ -481,7 +481,7 @@ class NCBlockRelaxationLight:
     def add_moment_linear_eq(self, a, val):
         # a is a list of tuple of the form (monomial,coefficient of monomial)
         # val is a scalar
-        print("Adding linear equality in moments")
+        #print("Adding linear equality in moments")
         kl = []
         for r,coeff in a:
             k = self.get_monomial_index(r)
@@ -545,101 +545,6 @@ class NCBlockRelaxationLight:
 
         # Update ncbr
         self.cost_vec = cost_vec
-
-
-    def create_SDP_ineq_form(self):
-
-        # FORMULATES PROBLEM IN FORM:
-        #
-        #      min   c'x      s.t. F0 + x1 F1 + ... + xn Fn >= 0
-        #      max  -tr(F0*Y) s.t. Y >= 0, tr(Fi Y) = c_i
-        #
-        # Returns sdpdata dict containing 'F0','F', 'c', 'block_struct' and 'index_postsub'
-
-        if self.verbose > 0:
-            print("Creating problem in inequality form")
-
-        # Check first that we have moment_subs and a cost vector
-        assert self.moment_subs is not None and self.cost_vec is not None
-
-        # Create F before block diagonalization
-        # For each element i in monomial_list, we create a sparse 0-1 matrix F_i that has ones precisely in the locations monomial_list[i]['loc']
-        print("Forming F_presub...")
-        N = len(self.monomial_set)
-        n_vars = len(self.monomial_list)
-        F_presub = lil_matrix((N**2,n_vars))
-        for i,e in enumerate(self.monomial_list):
-            if i%1000 == 0:
-                print("  Monomial %d/%d" % (i,n_vars))
-            elocall = e['loc']+e['symloc']
-            loc_lin = [N*lv1+lv2 for (lv1,lv2) in elocall]
-            loc_lin_T = [lv1+N*lv2 for (lv1,lv2) in elocall]
-            F_presub[loc_lin,i] = 1
-            F_presub[loc_lin_T,i] = 1
-        print("Done.")
-
-        # Keep only the Fs that have not been substituted
-        print("Keep only variables not substituted...")
-        kl = self.moment_subs['indices']
-        klvals = self.moment_subs['vals']
-        keep = [ix for ix in range(n_vars) if ix not in kl]
-        n_vars_postsub = len(keep)
-        index_postsub = {keep[i]: i for i in range(n_vars_postsub)}
-        assert n_vars_postsub == n_vars - len(kl)
-        F = F_presub.tocsc()[:,keep].tolil() # Convert to CSC to make column indexing faster (column indexing with lil_matrix is very slow)
-        print("Done.")
-
-        # Compute F0 from moment_subs
-        print("Compute F0")
-        mvals = csc_matrix((klvals,(kl,[0]*len(kl))),shape=[F_presub.shape[1],1])
-        # F0 = F*mvals (matrix-vector product)
-        F0 = (F_presub @ mvals).tolil()
-        print("Done.")
-
-        # Compute costvec
-        # Assuming that substituted values do not appear in the cost objective function!!
-        # Otherwise, these would contribute a constant term
-        c = self.cost_vec[keep]
-
-        # Step 2: APPLY BLOCK DIAGONALIZATION
-
-        if self.QQ is None:
-
-            sdpdata = {'F0': F0, 'F': F, 'c': c, 'block_struct': [N], 'index_postsub': index_postsub}
-            return sdpdata
-
-        else:
-
-            # Assuming 2 blocks only for now...
-            N0 = self.symmetry_block_struct[0]
-            N1 = self.symmetry_block_struct[1]
-
-            # First, ensure that each F_i is symmetric
-            triu_ix = np.triu_indices(N,1)
-            triu_lin_ix = triu_ix[0]*N+triu_ix[1]
-            triu_lin_ix_transpose = triu_ix[1]*N+triu_ix[0]
-            assert (F[triu_lin_ix_transpose,:] - F[triu_lin_ix,:]).getnnz() == 0, "Matrices F are not symmetric..."
-
-            # MAIN OPERATION: F_i <- Q*F_i*Q'
-            print("Applying QF_iQ^T for each F_i...")
-            t00 = time.time()
-            F0_Q = self.QQ @ F0
-            F_Q = self.QQ@F # <<-- This line is expensive, takes ~1min
-            print("Done, time=",time.time() - t00)
-
-            # Check that the resulting matrices are indeed block-diagonal:
-            offdiag_indices = [N*i+j for j in range(N0,N) for i in range(N0)]
-            assert np.max(np.abs(F0_Q[offdiag_indices,:])) < 1e-6, "Something's wrong: after applying orthogonal transformation matrices are not block diagonal"
-            assert np.max(np.abs(F_Q[offdiag_indices,:])) < 1e-6, "Something's wrong: after applying orthogonal transformation matrices are not block diagonal"
-
-            # Create the block-diagonal program
-            block0_indices = [N*i+j for i in range(N0) for j in range(N0)]
-            block1_indices = [N*i+j for i in range(N0,N) for j in range(N0,N)]
-            F0_block = F0_Q[block0_indices + block1_indices,:]
-            F_block = F_Q[block0_indices + block1_indices,:]
-
-            sdpdata = {'F0': F0_block, 'F': F_block, 'c': c, 'block_struct': [N0,N1], 'index_postsub': index_postsub}
-            return sdpdata
             
     def create_SDP_standard_form(self):
 
@@ -721,26 +626,14 @@ class NCBlockRelaxationLight:
                 cons_mons.append(e['mon'])
                 #print(e)
                 loc0 = N*el[0][0] + el[0][1] # sub2ind
-                loc0_T = el[0][0] + N*el[0][1] # transposed location
-                assert loc0 != loc0_T, "Found loc0 == loc0_T"
                 #print("Putting ", len(el)-1, " constraints for monomial ", e['mon'])
                 #import pdb
                 #pdb.set_trace()
                 for j in range(1,len(el)):
-                    #print(self.monomial_set[el[j][0]], self.monomial_set[el[j][1]])
-                    if loc0 != loc0_T:
-                        G[loc0,ii] = 1
-                        G[loc0_T,ii] = 1
-                    else:
-                        G[loc0,ii] = 2
+                    #print(self.monomial_set[el[j][0]], self.monomial_set[el[j][1]])    
+                    G[loc0,ii] = 1
                     locj = N*el[j][0] + el[j][1]
-                    locj_T = el[j][0] + N*el[j][1]
-                    assert locj != locj_T, "Found locj == locj_T"
-                    if locj != locj_T:
-                        G[locj,ii] = -1
-                        G[locj_T,ii] = -1
-                    else:
-                        G[locj,ii] = -2
+                    G[locj,ii] = -1
                     ii += 1
 
 
@@ -748,12 +641,7 @@ class NCBlockRelaxationLight:
         for ix,val in zip(self.moment_subs['indices'],self.moment_subs['vals']):
             mloc = self.monomial_list[ix]['loc'][0] # Location of monomial in matrix (one of them)
             mloc_ind = N*mloc[0] + mloc[1] # sub2ind
-            mloc_T_ind = mloc[0] + N*mloc[1] # transposed location
-            if mloc_ind == mloc_T_ind:
-                G[mloc_ind,ii] = 1*val
-            else:
-                G[mloc_ind,ii] = .5*val
-                G[mloc_T_ind,ii] = .5*val
+            G[mloc_ind,ii] = 1*val
             ii += 1
 
         # Construct G's for moment linear equalities (TODO: merge this with moment substitutions)
@@ -761,18 +649,13 @@ class NCBlockRelaxationLight:
         for ll in self.moment_linear_eqs:
             av = ll[0] # list of the form [(monomial 1 index,coeff),(monomial 2 index,coeff),...]
             rhs = ll[1]
-            print("Linear equality with av=", av, " , rhs = ", rhs)
+            #print("Linear equality with av=", av, " , rhs = ", rhs)
             moment_lin_eqs_rhs += [rhs]
             for ix,coeff in av:
                 mloc = self.monomial_list[ix]['loc'][0] # Location of monomial in matrix (one of them)
-                mloc_ind = N*mloc[0] + mloc[1] # sub2ind
-                mloc_T_ind = mloc[0] + N*mloc[1] # transposed location
-                print("  ix=", ix, ", coeff=", coeff, " mloc_ind=", mloc_ind, ", mloc_ind_T=", mloc_T_ind)
-                if mloc_ind == mloc_T_ind:
-                    G[mloc_ind,ii] = coeff
-                else:
-                    G[mloc_ind,ii] = .5*coeff
-                    G[mloc_T_ind,ii] = .5*coeff
+                mloc_ind = mloc[0]*N + mloc[1]
+                #print("  ix=", ix, ", coeff=", coeff, " mloc_ind=", mloc_ind, ", mloc_ind_T=", mloc_T_ind)   
+                G[mloc_ind,ii] = coeff
             print(G[:,ii])
             ii += 1
         
@@ -796,27 +679,10 @@ class NCBlockRelaxationLight:
             # # Instead of putting cval in one of the locations only, another option is to put an equal proportion on each loc, i.e.,
             # #    G0[i,j] = cval / (number of locations i,j)
             # # This could be more "robust"?F
-            # loc_ind = N*loc[0] + loc[1] # sub2ind
-            # loc_T_ind = loc[0] + N*loc[1] # transposed location
-            # if loc_ind == loc_T_ind:
-            #     G0[loc_ind] = cval
-            # else:
-            #     G0[loc_ind] = .5*cval
-            #     G0[loc_T_ind] = .5*cval
-            # --------------------------------
 
-            # Approach 2: Symmetric version of above
-            locs = self.monomial_list[ix]['loc']
-            cval1 = cval/len(locs)
-            for loc in locs:
-                loc_ind = N*loc[0] + loc[1] # sub2ind
-                loc_T_ind = loc[0] + N*loc[1] # transposed location
-                if loc_ind == loc_T_ind:
-                    G0[loc_ind] = cval1
-                else:
-                    G0[loc_ind] = .5*cval1
-                    G0[loc_T_ind] = .5*cval1
-            # --------------------------------
+            loc = self.monomial_list[ix]['loc'][0]
+            loc_ind = N*loc[0] + loc[1] # sub2ind
+            G0[loc_ind] = cval
         
 
         if not do_block_diag:
@@ -904,59 +770,7 @@ class NCBlockRelaxationLight:
 
 
         return sdpdata
-
-
-    def solve_with_cvxpy(self):
-
-        sdpdata = self.create_SDP_standard_form()
-
-        F0 = sdpdata['F0']
-        F = sdpdata['F']
-        c = sdpdata['c']
-        block_struct = sdpdata['block_struct']
-
-        assert F0.shape[0] == F.shape[0] and c.shape[0] == F.shape[1]
-
-        import cvxpy
-
-        print("Setting up CVXPY model")
-        num_blocks = len(block_struct)
-        Y = [cvxpy.Variable((bs,bs), symmetric=True) for bs in block_struct]
-        Yvec = cvxpy.vstack([cvxpy.reshape(Y[i],(block_struct[i]**2,1)) for i in range(num_blocks)])
-        print("Yvec.shape = ", Yvec.shape)
-        # The operator >> denotes matrix inequality.
-        constraints = [Y[i] >> 0 for i in range(num_blocks)]
-        constraints += [cvxpy.sum ( cvxpy.multiply( F[:,j] , Yvec ) ) == c[j] for j in range(len(c))]
-        objective = -cvxpy.sum( cvxpy.multiply( F0 , Yvec ) )
-        """
-        objective = 0
-        startix = 0
-        for i in range(num_blocks):
-            bs = block_struct[i]
-            endix = startix + bs**2
-            constraints = [ cvxpy.trace( F[startix:endix,j].reshape((bs,bs)) @ Y[i] ) == c[j] for j in range(len(c)) ]
-            objective += -cvxpy.trace(F0[startix:endix].reshape((bs,bs)) @ Y[i])
-            startix = endix
-        """
-        prob = cvxpy.Problem(cvxpy.Maximize(objective), constraints)
-        print("Now solving CVXPY model...")
-        prob.solve(solver='mosek')
-
-        print("Finished solving")
-
-
-    def set_K(self,K):
-        # K is of size NKxN (where N = len(monomial_set))
-        # such that K @ K.T = eye(NK)
-        # The rows of the matrix span the image of the Gram matrix
-        #
-        # i.e., this matrix K should satisfy the following property:
-        #    if v is a vector orthogonal to the rows of K, then v'G0v == 0 and v'G_i v == 0, where G0 and the Gi are the matrices constructed in create_SDP_standard_form()
-        #
-        NK = K.shape[0]
-        if np.linalg.norm(K@K.T - np.eye(NK)) > 1e-6:
-            raise Exception("The supplied matrix K is not an isometry")
-        self.K = K
+    
 
     def get_sdp_data(self,form='standard'):
         if form == 'standard':
@@ -1024,11 +838,10 @@ class NCBlockRelaxationLight:
         X = [M.variable(Domain.inPSDCone(bs)) for bs in block_struct]
         # x is a vectorized view of the variable
         x = Expr.vstack([X[i].reshape(block_struct[i]**2) for i in range(len(block_struct))])
+        print(Expr.mul(F_msk,x).toString())
 
         # Linear equality constraint
-        print(F)
         M.constraint(Expr.mul(F_msk,x),Domain.equalsTo(list(c)))
-        print(Expr.mul(F_msk,x).toString())
 
         # Objective
         obj = Expr.neg(Expr.dot(F0_msk,x))
@@ -1037,6 +850,7 @@ class NCBlockRelaxationLight:
         # Solve
         M.setLogHandler(sys.stdout)
         M.solve()
+        M.acceptedSolutionStatus(AccSolutionStatus.Anything)
 
         # Get solution
         status = M.getProblemStatus()
@@ -1048,6 +862,7 @@ class NCBlockRelaxationLight:
             # Dual variable is the SOS Gram matrix
             # The minus sign is because mosek returns a negative definite variable
             moment_matrix = block_diag(*[X[i].level().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
+            print(moment_matrix)
             sos_gram_matrix = -block_diag(*[X[i].dual().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
         else:
             # X is the sos gram matrix
@@ -1069,7 +884,9 @@ class NCBlockRelaxationLight:
         #import pdb
         #pdb.set_trace()
 
-        return constant_term+postfactor*primal, constant_term+postfactor*dual, status
+        print(moment_matrix)
+
+        return constant_term+postfactor*primal, constant_term+postfactor*dual, moment_matrix, status
 
 
     ########################### OLD FUNCTION #################################
