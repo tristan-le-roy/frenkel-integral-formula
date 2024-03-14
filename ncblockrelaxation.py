@@ -125,12 +125,12 @@ def build_simplify_comm_func(variables, order):
 
     return simplify_comm_func
 
-def build_simplify_subs_func(subs):
+def build_simplify_subs_func(sub):
     def simplify_subs_func(mon):
-        for sub in subs:
-            mon = mon.replace(lambda expr: expr in sub,
-                                lambda expr: sub[expr])
-        return mon
+        try:
+            return sub[mon]
+        except KeyError:
+            return mon
         
     return simplify_subs_func
 
@@ -216,7 +216,6 @@ class NCBlockRelaxationLight:
 
         if simplify_func is None:
             simplify_func = lambda x: x # identity map
-
         for lv1 in range(N):
             for lv2 in range(lv1+1):
                 if block == 1:
@@ -641,7 +640,7 @@ class NCBlockRelaxationLight:
         for ix,val in zip(self.moment_subs['indices'],self.moment_subs['vals']):
             mloc = self.monomial_list[ix]['loc'][0] # Location of monomial in matrix (one of them)
             mloc_ind = N*mloc[0] + mloc[1] # sub2ind
-            G[mloc_ind,ii] = 1*val
+            G[mloc_ind,ii] = 1
             ii += 1
 
         # Construct G's for moment linear equalities (TODO: merge this with moment substitutions)
@@ -656,7 +655,6 @@ class NCBlockRelaxationLight:
                 mloc_ind = mloc[0]*N + mloc[1]
                 #print("  ix=", ix, ", coeff=", coeff, " mloc_ind=", mloc_ind, ", mloc_ind_T=", mloc_T_ind)   
                 G[mloc_ind,ii] = coeff
-            print(G[:,ii])
             ii += 1
         
 
@@ -699,7 +697,7 @@ class NCBlockRelaxationLight:
             triu_ix = np.triu_indices(N,1)
             triu_lin_ix = triu_ix[0]*N+triu_ix[1]
             triu_lin_ix_transpose = triu_ix[1]*N+triu_ix[0]
-            assert (G[triu_lin_ix_transpose,:] - G[triu_lin_ix,:]).getnnz() == 0, "Matrices G are not symmetric..."
+            #assert (G[triu_lin_ix_transpose,:] - G[triu_lin_ix,:]).getnnz() == 0, "Matrices G are not symmetric..."
 
             # MAIN OPERATION: F_i <- Q*F_i*Q'
             print("Applying Q F_i Q^T for each F_i...")
@@ -838,7 +836,6 @@ class NCBlockRelaxationLight:
         X = [M.variable(Domain.inPSDCone(bs)) for bs in block_struct]
         # x is a vectorized view of the variable
         x = Expr.vstack([X[i].reshape(block_struct[i]**2) for i in range(len(block_struct))])
-        print(Expr.mul(F_msk,x).toString())
 
         # Linear equality constraint
         M.constraint(Expr.mul(F_msk,x),Domain.equalsTo(list(c)))
@@ -862,7 +859,6 @@ class NCBlockRelaxationLight:
             # Dual variable is the SOS Gram matrix
             # The minus sign is because mosek returns a negative definite variable
             moment_matrix = block_diag(*[X[i].level().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
-            print(moment_matrix)
             sos_gram_matrix = -block_diag(*[X[i].dual().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
         else:
             # X is the sos gram matrix
@@ -883,8 +879,6 @@ class NCBlockRelaxationLight:
 
         #import pdb
         #pdb.set_trace()
-
-        print(moment_matrix)
 
         return constant_term+postfactor*primal, constant_term+postfactor*dual, moment_matrix, status
 

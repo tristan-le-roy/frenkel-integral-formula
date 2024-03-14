@@ -342,12 +342,14 @@ class NCBlockRelaxationLight:
         #print("len(monomial_list) - num_subs = ", len(self.monomial_list) - num_subs)
 
         G = lil_matrix((N**2,m),dtype=np.float64)
+        Gb = []
 
         # Create F before block diagonalization
         # For each element i in monomial_list, we create precisely len(monomial_list[i]['loc'])-1 matrices F
         # These matrices will enforce that the corresponding entries in Y are equal; each such matrix will have a single 1, and a single -1
         ii = 0
         cons_mons = []
+        print(self.monomial_list)
         for e in self.monomial_list:
             el = e['loc']
             el = el + e['symloc']
@@ -359,6 +361,7 @@ class NCBlockRelaxationLight:
                     G[loc0,ii] = 1
                     locj = N*el[j][0] + el[j][1]
                     G[locj,ii] = -1
+                    Gb += [[(loc0, 1), (locj, -1)]]
                     ii += 1
 
 
@@ -366,8 +369,10 @@ class NCBlockRelaxationLight:
         for ix,val in zip(self.moment_subs['indices'],self.moment_subs['vals']):
             mloc = self.monomial_list[ix]['loc'][0] # Location of monomial in matrix (one of them)
             mloc_ind = N*mloc[0] + mloc[1] # sub2ind
-            G[mloc_ind,ii] = 1*val
+            G[mloc_ind,ii] = 1
+            Gb += [[(mloc_ind, val)]]
             ii += 1
+        
 
         # Construct G's for moment linear equalities (TODO: merge this with moment substitutions)
         moment_lin_eqs_rhs = []
@@ -376,11 +381,13 @@ class NCBlockRelaxationLight:
             rhs = ll[1]
             #print("Linear equality with av=", av, " , rhs = ", rhs)
             moment_lin_eqs_rhs += [rhs]
+            Gb += [[]]
             for ix,coeff in av:
                 mloc = self.monomial_list[ix]['loc'][0] # Location of monomial in matrix (one of them)
                 mloc_ind = mloc[0]*N + mloc[1]
                 #print("  ix=", ix, ", coeff=", coeff, " mloc_ind=", mloc_ind, ", mloc_ind_T=", mloc_T_ind)   
                 G[mloc_ind,ii] = coeff
+                Gb[ii] += [(mloc_ind, coeff)]
             ii += 1
         
 
@@ -399,7 +406,7 @@ class NCBlockRelaxationLight:
             G0[loc_ind] = cval
         
         # Value of SDP has to be multiplied by -1.0 to get the actual value (because the original problem is a minimization, and here we're maximizing the negative)
-        sdpdata = {'F': G, 'F0': G0, 'c': c, 'block_struct': [N], 'postfactor': -1.0, 'cons_mons': cons_mons}
+        sdpdata = {'F': G, 'Gb': Gb, 'F0': G0, 'c': c, 'block_struct': [N], 'postfactor': -1.0, 'cons_mons': cons_mons}
 
         return sdpdata
     
@@ -430,6 +437,7 @@ class NCBlockRelaxationLight:
 
         F0 = sdpdata['F0']
         F = coo_matrix(sdpdata['F']) 
+        Gb = sdpdata['Gb']
         c = sdpdata['c']
         block_struct = sdpdata['block_struct']
         constant_term = 0.0
@@ -438,6 +446,8 @@ class NCBlockRelaxationLight:
             postfactor = sdpdata['postfactor']
 
         assert F0.shape[0] == F.shape[0] and c.shape[0] == F.shape[1]
+
+        print(Gb)
 
         print("Forming MOSEK problem")
         print("  block_struct = ", block_struct)
@@ -476,7 +486,23 @@ class NCBlockRelaxationLight:
         # Dual variable is the SOS Gram matrix
         # The minus sign is because mosek returns a negative definite variable
         moment_matrix = block_diag(*[X[i].level().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
-        print(moment_matrix)
+        for ii in range(len(Gb)):
+            if len(Gb[ii]) == 1:
+                x, val = Gb[ii][0]
+                mom = X[0].level()[x]
+                print(ii, x, mom, "=", val)
+            if len(Gb[ii]) == 2:
+                x1, val1 = Gb[ii][0]
+                x2, val2 = Gb[ii][1]
+                mom1, mom2 = X[0].level()[x1], X[0].level()[x2]
+                print(ii, x1, x2, mom1, "=", mom2)
+            if len(Gb[ii]) == 3:
+                x1, val1 = Gb[ii][0]
+                x2, val2 = Gb[ii][1]
+                x3, val3 = Gb[ii][2]
+                mom1, mom2, mom3 = X[0].level()[x1], X[0].level()[x2], X[0].level()[x3]
+                print(ii, x1, x2, x3, val1*mom1, "+", val2*mom2, "+", val3*mom3, "= 0")
+        np.savetxt("./data/mom_mat", moment_matrix)
         sos_gram_matrix = -block_diag(*[X[i].dual().reshape((block_struct[i],block_struct[i])) for i in range(len(block_struct))])
 
         assert np.linalg.norm(sos_gram_matrix - sos_gram_matrix.conj().T) < 1e-8, "sos_gram_matrix is not Hermitian"

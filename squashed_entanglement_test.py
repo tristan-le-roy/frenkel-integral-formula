@@ -74,8 +74,8 @@ def squashed_entanglement_lb(rho,dim,m=4):
 
     mom_eq = []
     for l in range(m):
-        for i in range(dA):
-            for j in range(dA):
+        for i in range(dA*dB):
+            for j in range(dA*dB):
                 for a1 in range(dA):
                     for a2 in range(dA):
                         mom_eq_Z = [((i, j, Z[l][a1][a3]*Z[l][a3][a2]), -1) for a3 in range(dA)]
@@ -87,7 +87,7 @@ def squashed_entanglement_lb(rho,dim,m=4):
     # Add monomials of degree 0
     monomial_set += [(b,S.One) for b in range(dA*dB)]
     # Add select monomials of degree 1
-    monomial_set += [(b,Z[l][x][i]) for b in range(dA*dB) for i in range(dA) for x in range(dA) for l in range(m)]
+    monomial_set += [(b,Z[l][i][x]) for l in range(m) for b in range(dA*dB) for i in range(dA) for x in range(dA)]
 
     ncbr = NCBlockRelaxationLight(verbose=1)
 
@@ -96,10 +96,10 @@ def squashed_entanglement_lb(rho,dim,m=4):
     moment_subs = {(i,j,S.One): rho[i,j] for i in range(dA*dB) for j in range(dA*dB)}
     print(moment_subs)
     ncbr.do_moment_subs(moment_subs)
-    
+
     for me in mom_eq:
         ncbr.add_moment_linear_eq(me, 0)
-
+    
     # Set cost function
     obj = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
 
@@ -113,7 +113,8 @@ def squashed_entanglement_lb(rho,dim,m=4):
                     ik = dB*i+k # in {0,...,dA*dB-1}
                     jk = dB*j+k # in {0,...,dA*dB-1}
                     obj[ik,jk] += cvec[qq]*Z[qq][i][j]
-        
+    
+
     #print("Done.")
     ncbr.create_cost_vector(obj)
 
@@ -150,10 +151,10 @@ def wernerrho(p,d):
 
 if __name__ == "__main__":
 
-    dimA = 2
-    dimB = 1
-    p = 0.3
-    rho = np.array([[p, p/2],[p/2, 1-p]])
+    d = 2
+    dimA = d
+    dimB = d
+    p = 0.4
+    rho = wernerrho(p, d)
     
-    dimrho = dimA*dimB
     squashed_entanglement_lb(rho,[dimA,dimB],m=2)
