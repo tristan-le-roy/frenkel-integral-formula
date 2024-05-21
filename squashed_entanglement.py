@@ -28,14 +28,24 @@ def generateXNM(m):
 def generateXUni(m):
     return [(i+1)/m for i in range(m)]
 
+def generateXpUni(m, lam):
+    return [1 + i*(lam-1)/m for i in range(m+1)]
+
 def generate_coeff_integral(X):
     C = [(X[1]/(X[1]-X[0]))*log(X[1]/X[0])]
     for i in range(1, len(X)-1):
         C += [(X[i+1]/(X[i+1]-X[i])*log(X[i+1]/X[i]) - X[i-1]/(X[i]-X[i-1])*log(X[i]/X[i-1]))]
-    C += [(1+X[-2]*log(X[-2])/(1-X[-2]))]
+    C += [1 + X[-2]*log(X[-2])/(1-X[-2])]
     return C
 
-def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
+def generate_coeff_integral2(X):
+    C = [X[1]*log(X[1])/(X[1]-1) - 1]
+    for i in range(1,len(X)-1):
+        C += [(X[i+1]/(X[i+1]-X[i])*log(X[i+1]/X[i]) - X[i-1]/(X[i]-X[i-1])*log(X[i]/X[i-1]))]
+    C += [1 + X[-2]*log(X[-2]/X[-1])/(X[-1]-X[-2])]
+    return C
+
+def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
 
     # Use SDP relaxation to find lower bound on squashed entanglement
 
@@ -50,7 +60,9 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
 
     # Compute t_i, w_i
     tvec = generateXUni(m)
+    tp = generateXpUni(m, dA+1)
     cvec = generate_coeff_integral(tvec)
+    cp = generate_coeff_integral2(tp)
     #tvec[m-1] = 1.0
     #if m == 1:
     #    tvec = np.array([0.5])
@@ -62,21 +74,23 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
     print("m = ", m)
     print("  tvec=", tvec)
     print("  cvec=", cvec)
+    print("  tp=", tp)
+    print("  cp=", cp)
 
     # Form the SDP
-    Y = [[[Operator('Y'+str(l)+str(i)+str(j)) for j in range(dA)] for i in range(dA)] for l in range(m)]
-    Z = [[[Operator('Z'+str(l)+str(i)+str(j)) for j in range(dA)] for i in range(dA)] for l in range(m)]
+    Y = [[[Operator('Y'+str(l)+str(i)+str(j)) for j in range(dA)] for i in range(dA)] for l in range(2*m+1)]
+    Z = [[[Operator('Z'+str(l)+str(i)+str(j)) for j in range(dA)] for i in range(dA)] for l in range(2*m+1)]
     ops = flatten([Y,Z])
     oporder = {}
-    oporder.update({Y[l][i][j]: 1 for i in range(dA) for j in range(dA) for l in range(m)})
-    oporder.update({Z[l][i][j]: 2 for i in range(dA) for j in range(dA) for l in range(m)})
+    oporder.update({Y[l][i][j]: 1 for i in range(dA) for j in range(dA) for l in range(2*m+1)})
+    oporder.update({Z[l][i][j]: 2 for i in range(dA) for j in range(dA) for l in range(2*m+1)})
     
     Dagger_substitutions = {}
-    Dagger_substitutions.update({Dagger(Y[l][i][j]): Y[l][j][i] for l in range(m) for i in range(dA) for j in range(dA)})
-    Dagger_substitutions.update({Dagger(Z[l][i][j]): Z[l][j][i] for l in range(m) for i in range(dA) for j in range(dA)})
-    Dagger_substitutions.update({Dagger(Y[l][i][j])*Y[l][x][y]: Y[l][j][i]*Y[l][x][y] for l in range(m)
+    Dagger_substitutions.update({Dagger(Y[l][i][j]): Y[l][j][i] for l in range(2*m+1) for i in range(dA) for j in range(dA)})
+    Dagger_substitutions.update({Dagger(Z[l][i][j]): Z[l][j][i] for l in range(2*m+1) for i in range(dA) for j in range(dA)})
+    Dagger_substitutions.update({Dagger(Y[l][i][j])*Y[l][x][y]: Y[l][j][i]*Y[l][x][y] for l in range(2*m+1)
                                  for i in range(dA) for j in range(dA) for x in range(dA) for y in range(dA)})
-    Dagger_substitutions.update({Dagger(Z[l][i][j])*Z[l][x][y]: Z[l][j][i]*Z[l][x][y] for l in range(m)
+    Dagger_substitutions.update({Dagger(Z[l][i][j])*Z[l][x][y]: Z[l][j][i]*Z[l][x][y] for l in range(2*m+1)
                                  for i in range(dA) for j in range(dA) for x in range(dA) for y in range(dA)})
     
     # Build a function that will simplify any monomial containing Y and Z using commutation relation
@@ -95,7 +109,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
             raise Exception("Problem, unknown monb type = ", type(monb), ", monb = ", monb)
 
     mom_eq = []
-    for l in range(m):
+    for l in range(2*m+1):
         for i in range(dA*dB):
             for j in range(dA*dB):
                 for a1 in range(dA):
@@ -108,8 +122,8 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
 
     # Construct symmetry action map that swaps Y and Z
     YZ_replacement_rules = {}
-    YZ_replacement_rules.update({Z[l][i][j]: Y[l][i][j] for l in range(m) for i in range(dA) for j in range(dA)})
-    YZ_replacement_rules.update({Y[l][i][j]: Z[l][i][j] for l in range(m) for i in range(dA) for j in range(dA)})
+    YZ_replacement_rules.update({Z[l][i][j]: Y[l][i][j] for l in range(2*m+1) for i in range(dA) for j in range(dA)})
+    YZ_replacement_rules.update({Y[l][i][j]: Z[l][i][j] for l in range(2*m+1) for i in range(dA) for j in range(dA)})
     def action_YZ_symmetry(monb):
         # Takes a monomial m, and applies replacement Y <-> Z
         if isinstance(monb,sympy.Expr):
@@ -127,24 +141,11 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
     monomial_set = []
     # Add monomials of degree 0
     monomial_set += [(b,S.One) for b in range(dA*dB)]
-    # Add select monomials of degree 1
-    for l in range(m):
-            # only include monomials of the form Y[l]_{x,i} * psi_{i,j}
-            # (note: x,i are in {0,...,dA-1} and j is in {0,...,dB-1})
-            #
-            # Actually: I think that for each l,x,j one should only have *one row* only in the moment matrix
-            #    given by sum_{i}  (ij, Y[l]_{x,i})
-            # (and similarly one for sum_{i} (ij,Z[l]_{x,i}) ) -- instead of dA rows
-            # In other words, I think what is true is that for any valid Gram matrix G the following equation must be true:
-            #      G_{r,r} + G_{r,s} + G_{s,r} + G_{s,s} = 0
-            #  where r is the index for   (b,Y[l]_{x,i})
-            #  and   s is the index for   (b',Y[l]_{x,i'})
-            #  where b=(ij) and b'=(i'j) are two distinct blocks (within the same "A block")
+    # Add monomials of degree 1
+    for l in range(2*m+1):
         for x in range(dA):
             for i in range(dA):
                 for b in range(dA*dB):
-                #for j in range(1,dB):
-                    #b = dB*i+j # block number for (i,j), in {0,...,dA*dB-1}
                     monomial_set += [(b,Y[l][x][i]), (b,Z[l][x][i])]
     
     
@@ -159,8 +160,9 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
         ncbr.add_moment_linear_eq(me, 0)
 
     # Set cost function
-    obj = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
-
+    obj1 = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
+    obj2 = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
+    
     # Tr[rho*Y] = sum_{ijk} Tr[rho_{ik,jk} Y_{ij}]
     #print("Forming objective function ...", end="")
     for qq in range(m):
@@ -169,26 +171,47 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
                 for k in range(dB):
                     ik = dB*i+k # in {0,...,dA*dB-1}
                     jk = dB*j+k # in {0,...,dA*dB-1}
-                    obj[ik,jk] += cvec[qq]*Y[qq][i][j]
-                    obj[ik,jk] += cvec[qq]*Z[qq][i][j]
+                    obj1[ik,jk] += cvec[qq]*Y[qq][i][j]
+                    obj1[ik,jk] += cvec[qq]*Z[qq][i][j]
         # Tr[rho_{E} Tr_A(Y)]:
         #   Note that rho_{E} = sum_{i=1}^{dA} sum_{k=1}^{dB} rho_{ik,ik}
         #   and Tr_A(Y) = sum_{l,j=1}^{dA} Y_{lj} Y_{lj}^{\dagger}
         for l in range(dA):
             for j in range(dA):
-                obj -= tvec[qq]*cvec[qq]*Y[qq][l][j]*np.eye(dA*dB)
-                obj -= tvec[qq]*cvec[qq]*Z[qq][l][j]*np.eye(dA*dB)
+                obj1 -= tvec[qq]*cvec[qq]*Y[qq][l][j]*np.eye(dA*dB)
+                obj1 -= tvec[qq]*cvec[qq]*Z[qq][l][j]*np.eye(dA*dB)
+    
+    
+    for qq in range(m,2*m+1):
+        for i in range(dA):
+            for j in range(dA):
+                for k in range(dB):
+                    ik = dB*i+k # in {0,...,dA*dB-1}
+                    jk = dB*j+k # in {0,...,dA*dB-1}
+                    obj2[ik,jk] -= cp[qq-m]*Y[qq][i][j]
+                    obj2[ik,jk] -= cp[qq-m]*Z[qq][i][j]
+        # Tr[rho_{E} Tr_A(Y)]:
+        #   Note that rho_{E} = sum_{i=1}^{dA} sum_{k=1}^{dB} rho_{ik,ik}
+        #   and Tr_A(Y) = sum_{l,j=1}^{dA} Y_{lj} Y_{lj}^{\dagger}
+        for l in range(dA):
+            for j in range(dA):
+                obj2 += tp[qq-m]*cp[qq-m]*Y[qq][l][j]*np.eye(dA*dB)
+                obj2 += tp[qq-m]*cp[qq-m]*Z[qq][l][j]*np.eye(dA*dB)
     #print("Done.")
-    ncbr.create_cost_vector(obj)
+    
+    ncbr.create_cost_vector(obj1)
 
     # Solve problem
-    if solver == 'scs':
-        #ncbr.solve_with_cvxpy()
-        primal, dual, x_mat, y_mat, x_vec, status = ncbr.solve_with_scs(form='standard',max_iters=50000)
-    elif solver == 'mosek':
-        primal, dual, mom_mat, status = ncbr.solve_with_mosek()
-    else:
-        raise Exception("Unrecognized solver")
+    primal, dual1, mom_mat, status = ncbr.solve_with_mosek()
+
+    
+    ncbr.create_cost_vector(obj2)
+    primal, dual2, mom_mat, status = ncbr.solve_with_mosek()
+    
+    """
+    ncbr.create_cost_vector(obj2)
+    primal, dual2, mom_mat, status = ncbr.solve_with_mosek()
+    """
 
     """
     # the gamma_{ij} such that [p_{ij} - gamma_{ij} I] is sos
@@ -199,7 +222,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek',scs_max_iters=5000):
     print("np.sum(rho*gamma) = ", np.sum(rho*gamma))
     """
 
-    ncbnd = (dA-1 + 0.5 + dual/2)/log(2)
+    ncbnd = ((dA-1) + (dual1-dual2)/2)/log(2)
     print("Lower bound on Squashed entanglement = ", ncbnd)
 
     #for ii in range(len(monomial_set)): print("%s\t%.6e" % (str(monomial_set[ii]),x_mat[ii,ii]))
@@ -238,8 +261,8 @@ if __name__ == "__main__":
     d = 3   
     dimA = d
     dimB = d
-    p = 0.5
+    p = 0.0
     rho = wernerrho(p,d)
     
     dimrho = dimA*dimB
-    squashed_entanglement_lb(rho,[dimA,dimB],m=8,solver='mosek')
+    squashed_entanglement_lb(rho,[dimA,dimB],m=4,solver='mosek')
