@@ -60,7 +60,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
 
     # Compute t_i, w_i
     tvec = generateXUni(m)
-    tp = generateXpUni(m, dA+1)
+    tp = generateXpUni(m, dA)
     cvec = generate_coeff_integral(tvec)
     cp = generate_coeff_integral2(tp)
     #tvec[m-1] = 1.0
@@ -160,8 +160,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
         ncbr.add_moment_linear_eq(me, 0)
 
     # Set cost function
-    obj1 = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
-    obj2 = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
+    obj = np.zeros((dA*dB,dA*dB),dtype=sympy.Expr)
     
     # Tr[rho*Y] = sum_{ijk} Tr[rho_{ik,jk} Y_{ij}]
     #print("Forming objective function ...", end="")
@@ -171,15 +170,15 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
                 for k in range(dB):
                     ik = dB*i+k # in {0,...,dA*dB-1}
                     jk = dB*j+k # in {0,...,dA*dB-1}
-                    obj1[ik,jk] += cvec[qq]*Y[qq][i][j]
-                    obj1[ik,jk] += cvec[qq]*Z[qq][i][j]
+                    obj[ik,jk] += cvec[qq]*Y[qq][i][j]
+                    obj[ik,jk] += cvec[qq]*Z[qq][i][j]
         # Tr[rho_{E} Tr_A(Y)]:
         #   Note that rho_{E} = sum_{i=1}^{dA} sum_{k=1}^{dB} rho_{ik,ik}
         #   and Tr_A(Y) = sum_{l,j=1}^{dA} Y_{lj} Y_{lj}^{\dagger}
         for l in range(dA):
             for j in range(dA):
-                obj1 -= tvec[qq]*cvec[qq]*Y[qq][l][j]*np.eye(dA*dB)
-                obj1 -= tvec[qq]*cvec[qq]*Z[qq][l][j]*np.eye(dA*dB)
+                obj -= tvec[qq]*cvec[qq]*Y[qq][l][j]*np.eye(dA*dB)
+                obj -= tvec[qq]*cvec[qq]*Z[qq][l][j]*np.eye(dA*dB)
     
     
     for qq in range(m,2*m+1):
@@ -188,26 +187,26 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
                 for k in range(dB):
                     ik = dB*i+k # in {0,...,dA*dB-1}
                     jk = dB*j+k # in {0,...,dA*dB-1}
-                    obj2[ik,jk] -= cp[qq-m]*Y[qq][i][j]
-                    obj2[ik,jk] -= cp[qq-m]*Z[qq][i][j]
+                    obj[ik,jk] -= cp[qq-m]*Y[qq][i][j]
+                    obj[ik,jk] -= cp[qq-m]*Z[qq][i][j]
         # Tr[rho_{E} Tr_A(Y)]:
         #   Note that rho_{E} = sum_{i=1}^{dA} sum_{k=1}^{dB} rho_{ik,ik}
         #   and Tr_A(Y) = sum_{l,j=1}^{dA} Y_{lj} Y_{lj}^{\dagger}
         for l in range(dA):
             for j in range(dA):
-                obj2 += tp[qq-m]*cp[qq-m]*Y[qq][l][j]*np.eye(dA*dB)
-                obj2 += tp[qq-m]*cp[qq-m]*Z[qq][l][j]*np.eye(dA*dB)
+                obj += tp[qq-m]*cp[qq-m]*Y[qq][l][j]*np.eye(dA*dB)
+                obj += tp[qq-m]*cp[qq-m]*Z[qq][l][j]*np.eye(dA*dB)
     #print("Done.")
     
-    ncbr.create_cost_vector(obj1)
+    ncbr.create_cost_vector(obj)
 
     # Solve problem
-    primal, dual1, mom_mat, status = ncbr.solve_with_mosek()
+    primal, dual, mom_mat, status = ncbr.solve_with_mosek()
 
-    
+    """
     ncbr.create_cost_vector(obj2)
     primal, dual2, mom_mat, status = ncbr.solve_with_mosek()
-    
+    """
     """
     ncbr.create_cost_vector(obj2)
     primal, dual2, mom_mat, status = ncbr.solve_with_mosek()
@@ -222,7 +221,7 @@ def squashed_entanglement_lb(rho,dim,m=4,solver='mosek'):
     print("np.sum(rho*gamma) = ", np.sum(rho*gamma))
     """
 
-    ncbnd = ((dA-1) + (dual1-dual2)/2)/log(2)
+    ncbnd = ((dA-1) + (dual)/2)/log(2)
     print("Lower bound on Squashed entanglement = ", ncbnd)
 
     #for ii in range(len(monomial_set)): print("%s\t%.6e" % (str(monomial_set[ii]),x_mat[ii,ii]))
@@ -258,11 +257,11 @@ def wernerrho(p,d):
 
 if __name__ == "__main__":
 
-    d = 3   
+    d = 2   
     dimA = d
     dimB = d
     p = 0.0
     rho = wernerrho(p,d)
     
     dimrho = dimA*dimB
-    squashed_entanglement_lb(rho,[dimA,dimB],m=4,solver='mosek')
+    squashed_entanglement_lb(rho,[dimA,dimB],m=6,solver='mosek')
